@@ -1,0 +1,45 @@
+name: Crous Watcher
+
+on:
+  schedule:
+    # Restarts the watcher every 6 hours (Actions jobs can't run forever).
+    - cron: '0 */6 * * *'
+  workflow_dispatch: {}   # lets you click "Run workflow" manually to test
+
+concurrency:
+  group: crous-watcher
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # needed so the bot can save its "seen listings" file back to the repo
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355   # just under 6h, so it exits before the next run starts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run watcher
+        run: python monitor.py
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          CROUS_URL: ${{ vars.CROUS_URL }}
+          CHECK_INTERVAL: '30'
+          SEND_STARTUP_PING: '0'
+
+      - name: Save state back to repo
+        if: always()
+        run: |
+          git config user.name "crous-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add seen_listings.json 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "update seen listings [skip ci]"
+          git push || true
